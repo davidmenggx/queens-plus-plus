@@ -1,0 +1,16 @@
+.vs/
+.idea/
+
+out/
+build/
+install/
+cmake-build-*/
+
+CMakeUserPresets.json
+compile_commands.json
+
+*.exe
+*.dll
+*.lib
+*.so
+*.dylib

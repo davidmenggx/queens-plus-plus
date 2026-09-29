@@ -1,2 +1,2 @@
 # queens-plus-plus
-LinkedIn Queens in C++
+[LinkedIn Queens](https://www.linkedin.com/games/queens/) in C++
