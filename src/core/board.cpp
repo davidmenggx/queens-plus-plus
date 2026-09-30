@@ -1,5 +1,3 @@
 #include "board.hpp"
 
-namespace qpp {
-
-}
+namespace qpp {}
