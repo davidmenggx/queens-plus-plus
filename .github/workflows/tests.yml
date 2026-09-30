@@ -1,0 +1,45 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.preset }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, preset: windows-debug }
+          - { os: windows-latest, preset: windows-release }
+          - { os: ubuntu-24.04, preset: linux-debug }
+          - { os: ubuntu-24.04, preset: linux-release }
+    steps:
+      - uses: actions/checkout@v7
+
+      # Puts cl, cmake and ninja on the PATH for the Ninja generator.
+      - name: Set up MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      # The tests don't use SDL, so none of its dependencies are needed here.
+      - name: Install Ninja
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }} -DQPP_BUILD_GAME=OFF
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Test
+        run: ctest --test-dir build/${{ matrix.preset }} --output-on-failure --no-tests=error

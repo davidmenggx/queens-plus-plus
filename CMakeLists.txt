@@ -9,55 +9,89 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
+# Lets CI build and run the tests without SDL.
+option(QPP_BUILD_GAME "Build the game (fetches SDL3)" ON)
+
 include(GNUInstallDirs)
+include(FetchContent)
 
 # Lay out the build tree like the install tree (bin/ and lib/), so the game and
 # SDL's shared library end up where the game expects to find them at runtime.
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/${CMAKE_INSTALL_BINDIR})
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR})
 
-set(SDL_SHARED ON CACHE BOOL "Build SDL as a shared library")
-set(SDL_STATIC OFF CACHE BOOL "Build SDL as a static library")
-set(SDL_TEST_LIBRARY OFF CACHE BOOL "Build the SDL3_test library")
-
-include(FetchContent)
-FetchContent_Declare(
-    SDL3
-    GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
-    GIT_TAG        release-3.4.16
-    GIT_SHALLOW    TRUE
-    SYSTEM
+# Game logic shared by the game and the tests.
+add_library(qpp-core STATIC
+    src/core/board.cpp
+    src/core/generator.cpp
+    src/core/puzzle.cpp
+    src/core/rng.cpp
 )
-FetchContent_MakeAvailable(SDL3)
+target_include_directories(qpp-core PUBLIC src)
 
-add_executable(queens-plus-plus
-    src/app/main.cpp
-)
+if(QPP_BUILD_GAME)
+    set(SDL_SHARED ON CACHE BOOL "Build SDL as a shared library")
+    set(SDL_STATIC OFF CACHE BOOL "Build SDL as a static library")
+    set(SDL_TEST_LIBRARY OFF CACHE BOOL "Build the SDL3_test library")
 
-target_include_directories(queens-plus-plus PRIVATE src)
+    FetchContent_Declare(
+        SDL3
+        GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
+        GIT_TAG        release-3.4.16
+        GIT_SHALLOW    TRUE
+        SYSTEM
+    )
+    FetchContent_MakeAvailable(SDL3)
 
-target_link_libraries(queens-plus-plus PRIVATE SDL3::SDL3)
+    add_executable(queens-plus-plus
+        src/app/main.cpp
+    )
 
-set_target_properties(queens-plus-plus PROPERTIES
-    # On Windows, only open a console window for debug builds.
-    WIN32_EXECUTABLE $<NOT:$<CONFIG:Debug>>
-    # On Linux, look for libSDL3.so in ../lib relative to the executable.
-    INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}"
-)
+    target_link_libraries(queens-plus-plus PRIVATE qpp-core SDL3::SDL3)
 
-if(MSVC)
-    target_compile_options(queens-plus-plus PRIVATE /W4)
-else()
-    target_compile_options(queens-plus-plus PRIVATE -Wall -Wextra -Wpedantic)
+    set_target_properties(queens-plus-plus PROPERTIES
+        # On Windows, only open a console window for debug builds.
+        WIN32_EXECUTABLE $<NOT:$<CONFIG:Debug>>
+        # On Linux, look for libSDL3.so in ../lib relative to the executable.
+        INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}"
+    )
+
+    if(MSVC)
+        target_compile_options(queens-plus-plus PRIVATE /W4)
+    else()
+        target_compile_options(queens-plus-plus PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+
+    install(TARGETS queens-plus-plus
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    )
+
+    # SDL is built as part of this project, so it has to be shipped with the game.
+    install(TARGETS SDL3-shared
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} NAMELINK_SKIP
+        ARCHIVE EXCLUDE_FROM_ALL
+    )
 endif()
 
-install(TARGETS queens-plus-plus
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-)
+# Use the same C runtime as the rest of the project on Windows, and don't
+# install GoogleTest alongside the game.
+set(gtest_force_shared_crt ON CACHE BOOL "Use shared C runtime")
+set(INSTALL_GTEST OFF CACHE BOOL "Install GoogleTest")
 
-# SDL is built as part of this project, so it has to be shipped with the game.
-install(TARGETS SDL3-shared
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} NAMELINK_SKIP
-    ARCHIVE EXCLUDE_FROM_ALL
+FetchContent_Declare(
+    googletest
+    GIT_REPOSITORY https://github.com/google/googletest.git
+    GIT_TAG        v1.15.2
+    GIT_SHALLOW    TRUE
 )
+FetchContent_MakeAvailable(googletest)
+
+enable_testing()
+include(GoogleTest)
+
+add_executable(qpp-tests
+    tests/test_rng.cpp
+)
+target_link_libraries(qpp-tests PRIVATE qpp-core GTest::gtest_main)
+gtest_discover_tests(qpp-tests)
